@@ -1,17 +1,22 @@
 server:
-  port: 80
-
-
+  port: ${PORT:80}
+  max-http-header-size: 16KB
 spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
-    url: jdbc:mysql://${MYSQL_ADDRESS}/${MYSQL_DATABASE:springboot_demo}
-    username: ${MYSQL_USERNAME}
-    password: ${MYSQL_PASSWORD}
-  mvc:
-    view:
-      suffix: .html
-      prefix: /
-
-mybatis:
-  mapper-locations: classpath*:mapper/*Mapper.xml
+    url: jdbc:mysql://${MYSQL_ADDRESS:sh-cynosdbmysql-grp-fealk5fi.sql.tencentcdb.com:29069}/${MYSQL_DATABASE:qiyu_shihen}?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&sslMode=${MYSQL_SSL_MODE:PREFERRED}
+    username: ${MYSQL_USERNAME:root}
+    password: ${MYSQL_PASSWORD:T7VYHM8q}
+    hikari:
+      maximum-pool-size: 5
+      connection-timeout: 10000
+  sql:
+    init:
+      mode: always
+      encoding: UTF-8
+  jackson:
+    time-zone: Asia/Shanghai
+app:
+  wechat-app-id: ${WX_APP_ID:wxd16f6433e9bfc102}
+  wechat-app-secret: ${WX_APP_SECRET:e0780f6876f2e2e0d48d094c5a5d5d0d}
+  public-url: ${PUBLIC_URL:https://springboot-mhk8-327958-5-1328917945.sh.run.tcloudbase.com}
