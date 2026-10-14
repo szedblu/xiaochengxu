@@ -75,13 +75,27 @@ class LifeApiTest {
     @Test void cloudLoginRequiresGatewaySourceAppAndEnvironment() throws Exception {
         request(post("/api/auth/cloud"), null, Map.of("openid", "forged"), 401);
         request(post("/api/auth/cloud").header("X-WX-OPENID", "forged"), null, null, 401);
-        request(post("/api/auth/cloud").header("X-WX-SOURCE", "public").header("X-WX-OPENID", "forged"), null, null, 401);
+        request(post("/api/auth/cloud").header("X-WX-SOURCE", " "), null, null, 401);
+        request(post("/api/auth/cloud").header("X-WX-SOURCE", "other").header("X-WX-OPENID", "forged"), null, null, 403);
         request(post("/api/auth/cloud").header("X-WX-SOURCE", "wx_client").header("X-WX-APPID", "wrong")
                 .header("X-WX-ENV", "prod-d8gvg5147dbf7cb35").header("X-WX-OPENID", "forged"), null, null, 403);
         request(post("/api/auth/cloud").header("X-WX-SOURCE", "wx_client").header("X-WX-APPID", "wxd16f6433e9bfc102")
                 .header("X-WX-ENV", "wrong-env").header("X-WX-OPENID", "forged"), null, null, 403);
         String token = request(cloudLogin("trusted"), null, Map.of("openid", "ignored-body-identity"), 200).path("token").asText();
         assertEquals("openid_trusted", db.queryForObject("SELECT openid FROM qy_users WHERE id=?", String.class, id(token)));
+        verifyNoInteractions(wechat);
+    }
+    @Test void acceptsPlatformOtherSourceOnlyWithCompleteMatchingIdentity() throws Exception {
+        MockHttpServletRequestBuilder valid = post("/api/auth/cloud").header("X-WX-SOURCE", "other")
+                .header("X-WX-APPID", "wxd16f6433e9bfc102").header("X-WX-ENV", "prod-d8gvg5147dbf7cb35")
+                .header("X-WX-OPENID", "openid_platform_user");
+        String token = request(valid, null, null, 200).path("token").asText();
+        assertEquals("openid_platform_user", db.queryForObject("SELECT openid FROM qy_users WHERE id=?", String.class, id(token)));
+        request(post("/api/auth/cloud").header("X-WX-SOURCE", "other")
+                .header("X-WX-APPID", "wxd16f6433e9bfc102").header("X-WX-ENV", "prod-d8gvg5147dbf7cb35"), null, null, 401);
+        request(post("/api/auth/cloud").header("X-WX-SOURCE", "other")
+                .header("X-WX-APPID", "wxd16f6433e9bfc102").header("X-WX-ENV", "prod-d8gvg5147dbf7cb35")
+                .header("X-WX-OPENID", " "), null, null, 401);
         verifyNoInteractions(wechat);
     }
     @Test void personalProfileValidationAndUniqueAccounts() throws Exception {

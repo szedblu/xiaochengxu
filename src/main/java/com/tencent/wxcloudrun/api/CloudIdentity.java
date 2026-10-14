@@ -1,6 +1,5 @@
 package com.tencent.wxcloudrun.api;
 
-import java.util.Set;
 import javax.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +23,8 @@ public class CloudIdentity {
         String openid = fromApp == null ? request.getHeader("X-WX-OPENID") : request.getHeader("X-WX-FROM-OPENID");
         LOG.info("Cloud login identity headers: source={}, appId={}, env={}, openidPresent={}",
                 SafeLogs.redact(source), SafeLogs.redact(appId), SafeLogs.redact(env), openid != null && !openid.isBlank());
-        if (source == null || !Set.of("wx_client", "wx_devtools").contains(source))
+        // 平台没有承诺固定来源枚举；校验头存在，身份仍由 AppID、环境和 OpenID 共同校验。
+        if (source == null || source.isBlank())
             throw new ApiError(401, "请通过微信小程序 callContainer 登录");
         if (!expectedAppId.equals(appId) || !expectedEnv.equals(env))
             throw new ApiError(403, "小程序或云托管环境不匹配，请检查云资源关联配置");
