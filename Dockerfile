@@ -21,7 +21,7 @@ FROM eclipse-temurin:17-jre-alpine
 # 安装依赖包，如需其他依赖包，请到alpine依赖包管理(https://pkgs.alpinelinux.org/packages?name=php8*imagick*&branch=v3.13)查找。
 # 选用国内镜像源以提高下载速度
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tencent.com/g' /etc/apk/repositories \
-    && apk add --no-cache tzdata ca-certificates openssl \
+    && apk add --no-cache tzdata ca-certificates openssl curl \
     && update-ca-certificates
 
 # 容器默认时区为UTC，如需使用上海时间请启用以下时区设置命令
@@ -31,11 +31,20 @@ RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.tencent.com/g' /etc/apk/repositorie
 # 若将来有经核验的自定义 CA，可放入 /certificates 再由入口脚本处理。
 ENV USE_SYSTEM_CA_CERTS=1
 
+# 从 DigiCert 官方下载 DER 根证书，核对官方 SHA-256 后导入 Java 17 的 cacerts。
+RUN curl --fail --show-error --location --proto '=https' --tlsv1.2 --retry 3 \
+      https://cacerts.digicert.com/DigiCertGlobalRootG2.crt -o /tmp/DigiCertGlobalRootG2.crt \
+    && echo 'cb3ccbb76031e5e0138f8dd39a23f9de47ffc35e43c1144cea27d46a5ab1cb5f  /tmp/DigiCertGlobalRootG2.crt' | sha256sum -c - \
+    && keytool -importcert -noprompt -trustcacerts -alias qiyu-digicert-global-root-g2 \
+      -file /tmp/DigiCertGlobalRootG2.crt -cacerts -storepass changeit \
+    && rm /tmp/DigiCertGlobalRootG2.crt
+
 # 指定运行时的工作目录
 WORKDIR /app
 
 # 将构建产物jar包拷贝到运行时目录中
 COPY --from=build /app/target/*.jar .
+COPY start-container.sh /app/start-container.sh
 
 # 暴露端口
 # 此处端口必须与「服务设置」-「流水线」以及「手动上传代码包」部署时填写的端口一致，否则会部署失败。
@@ -45,4 +54,4 @@ EXPOSE 80
 # 写多行独立的CMD命令是错误写法！只有最后一行CMD命令会被执行，之前的都会被忽略，导致业务报错。
 # 请参考[Docker官方文档之CMD命令](https://docs.docker.com/engine/reference/builder/#cmd)
 ENV TZ=Asia/Shanghai
-CMD ["java", "-Duser.timezone=Asia/Shanghai", "-Djava.awt.headless=true", "-jar", "/app/springboot-wxcloudrun-1.0.jar"]
+CMD ["sh", "/app/start-container.sh"]

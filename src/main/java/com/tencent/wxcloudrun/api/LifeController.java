@@ -16,7 +16,8 @@ public class LifeController {
     private final AuthService auth;
     private final LifeService life;
     private final JdbcTemplate db;
-    public LifeController(AuthService auth, LifeService life, JdbcTemplate db) { this.auth = auth; this.life = life; this.db = db; }
+    private final CloudIdentity cloud;
+    public LifeController(AuthService auth, LifeService life, JdbcTemplate db, CloudIdentity cloud) { this.auth = auth; this.life = life; this.db = db; this.cloud = cloud; }
     private String user(HttpServletRequest r) { return auth.require(r.getHeader("Authorization")); }
     public static Map<String, Object> ok(Object data) {
         Map<String, Object> result = new LinkedHashMap<>(); result.put("code", 0); result.put("data", data); return result;
@@ -30,6 +31,10 @@ public class LifeController {
     @PostMapping("/auth/wechat")
     public Map<String, Object> login(@RequestBody Map<String, Object> data) {
         return ok(auth.login(Input.text(data, "code", 256, true)));
+    }
+    @PostMapping("/auth/cloud")
+    public Map<String, Object> cloudLogin(HttpServletRequest request) {
+        return ok(auth.loginIdentity(cloud.require(request)));
     }
     @PostMapping("/auth/logout")
     public Map<String, Object> logout(HttpServletRequest r) { auth.logout(r.getHeader("Authorization")); return ok(Map.of()); }

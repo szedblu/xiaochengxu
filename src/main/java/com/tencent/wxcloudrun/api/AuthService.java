@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 public class AuthService {
@@ -23,9 +24,14 @@ public class AuthService {
     private final JdbcTemplate db;
     private final WechatClient wechat;
     private final SecureRandom random = new SecureRandom();
+    @Value("${app.wechat-code-login-enabled:false}") private boolean codeLoginEnabled;
     public AuthService(JdbcTemplate db, WechatClient wechat) { this.db = db; this.wechat = wechat; }
     public Map<String, Object> login(String code) {
+        if (!codeLoginEnabled) throw new ApiError(410, "请更新小程序，使用云托管身份登录");
         String openid = wechat.exchange(code);
+        return loginIdentity(openid);
+    }
+    public Map<String, Object> loginIdentity(String openid) {
         LOG.info("Login identity verified; querying user");
         List<String> found = db.queryForList("SELECT id FROM qy_users WHERE openid=?", String.class, openid);
         String userId;

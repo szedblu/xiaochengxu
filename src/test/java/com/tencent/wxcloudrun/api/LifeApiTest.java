@@ -45,14 +45,19 @@ class LifeApiTest {
         MvcResult result = mvc.perform(builder).andExpect(status().is(status)).andReturn();
         return json.readTree(result.getResponse().getContentAsByteArray()).path("data");
     }
-    private String login(String code) throws Exception { return request(post("/api/auth/wechat"), null, Map.of("code", code), 200).path("token").asText(); }
+    private MockHttpServletRequestBuilder cloudLogin(String code) {
+        return post("/api/auth/cloud").header("X-WX-SOURCE", "wx_client")
+                .header("X-WX-APPID", "wxd16f6433e9bfc102").header("X-WX-ENV", "prod-d8gvg5147dbf7cb35")
+                .header("X-WX-OPENID", "openid_" + code);
+    }
+    private String login(String code) throws Exception { return request(cloudLogin(code), null, null, 200).path("token").asText(); }
     private JsonNode state(String token) throws Exception { return request(get("/api/bootstrap"), token, null, 200); }
     private String id(String token) throws Exception { return state(token).path("meId").asText(); }
 
     @Test void verifiedWechatIdentityAndRevocableSessions() throws Exception {
         request(get("/api/bootstrap").header("X-WX-OPENID", "forged"), null, null, 401);
         when(wechat.exchange("invalid")).thenThrow(new ApiError(401, "凭证无效"));
-        request(post("/api/auth/wechat"), null, Map.of("code", "invalid"), 401);
+        request(post("/api/auth/wechat"), null, Map.of("code", "invalid"), 410);
         request(post("/api/auth/wechat"), null, Map.of("code", 123), 400);
         String alice = login("alice");
         JsonNode initial = state(alice);
@@ -65,6 +70,19 @@ class LifeApiTest {
         String other = login("bob");
         db.update("UPDATE qy_sessions SET expires_at=?", java.sql.Timestamp.from(java.time.Instant.now().minusSeconds(60)));
         request(get("/api/bootstrap"), other, null, 401);
+        verifyNoInteractions(wechat);
+    }
+    @Test void cloudLoginRequiresGatewaySourceAppAndEnvironment() throws Exception {
+        request(post("/api/auth/cloud"), null, Map.of("openid", "forged"), 401);
+        request(post("/api/auth/cloud").header("X-WX-OPENID", "forged"), null, null, 401);
+        request(post("/api/auth/cloud").header("X-WX-SOURCE", "public").header("X-WX-OPENID", "forged"), null, null, 401);
+        request(post("/api/auth/cloud").header("X-WX-SOURCE", "wx_client").header("X-WX-APPID", "wrong")
+                .header("X-WX-ENV", "prod-d8gvg5147dbf7cb35").header("X-WX-OPENID", "forged"), null, null, 403);
+        request(post("/api/auth/cloud").header("X-WX-SOURCE", "wx_client").header("X-WX-APPID", "wxd16f6433e9bfc102")
+                .header("X-WX-ENV", "wrong-env").header("X-WX-OPENID", "forged"), null, null, 403);
+        String token = request(cloudLogin("trusted"), null, Map.of("openid", "ignored-body-identity"), 200).path("token").asText();
+        assertEquals("openid_trusted", db.queryForObject("SELECT openid FROM qy_users WHERE id=?", String.class, id(token)));
+        verifyNoInteractions(wechat);
     }
     @Test void personalProfileValidationAndUniqueAccounts() throws Exception {
         String a = login("a"), b = login("b");
