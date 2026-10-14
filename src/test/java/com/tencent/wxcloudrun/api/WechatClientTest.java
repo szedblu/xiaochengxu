@@ -32,6 +32,20 @@ class WechatClientTest {
                 .andRespond(withSuccess("{\"openid\":\"\"}", MediaType.APPLICATION_JSON));
         assertEquals(401, assertThrows(ApiError.class, () -> client.exchange("blank")).status); server.verify();
     }
+    @Test void acceptsWechatJsonReturnedAsPlainText() {
+        WechatClient client = client("test-secret");
+        server.expect(requestTo(startsWith("https://api.weixin.qq.com/")))
+                .andRespond(withSuccess("{\"openid\":\"verified-plain-text-openid\"}", MediaType.TEXT_PLAIN));
+        assertEquals("verified-plain-text-openid", client.exchange("wechat-code")); server.verify();
+    }
+    @Test void exposesActionableConfigurationErrorsWithoutCredentials() {
+        WechatClient client = client("private-value");
+        server.expect(requestTo(startsWith("https://api.weixin.qq.com/")))
+                .andRespond(withSuccess("{\"errcode\":40125,\"errmsg\":\"invalid secret\"}", MediaType.TEXT_PLAIN));
+        ApiError error = assertThrows(ApiError.class, () -> client.exchange("code"));
+        assertEquals(503, error.status); assertTrue(error.getMessage().contains("AppSecret"));
+        assertFalse(error.getMessage().contains("private-value")); server.verify();
+    }
     @Test void reportsMissingConfigurationAndUpstreamFailureWithoutSecrets() {
         WechatClient noSecret = client("");
         assertEquals(503, assertThrows(ApiError.class, () -> noSecret.exchange("code")).status);

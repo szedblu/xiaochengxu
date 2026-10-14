@@ -20,3 +20,6 @@ app:
   wechat-app-id: ${WX_APP_ID:wxd16f6433e9bfc102}
   wechat-app-secret: ${WX_APP_SECRET:e0780f6876f2e2e0d48d094c5a5d5d0d}
   public-url: ${PUBLIC_URL:https://springboot-mhk8-327958-5-1328917945.sh.run.tcloudbase.com}
+logging:
+  pattern:
+    level: "%5p [requestId=%X{requestId}]"

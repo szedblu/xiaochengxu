@@ -187,7 +187,7 @@ public class LifeService {
         BigDecimal amount = Input.decimal(data.get("amount"), 0.01, 9999999999.99, 2);
         LocalDateTime date;
         try { date = LocalDateTime.parse(Input.text(data, "date", 30, true)); }
-        catch (RuntimeException e) { throw new ApiError(400, "账单日期格式不正确"); }
+        catch (RuntimeException e) { throw new ApiError(400, "账单日期格式不正确", e); }
         Input.date(date.toLocalDate().toString());
         if (date.toLocalDate().isAfter(Input.today())) throw new ApiError(400, "不能记录未来的账单");
         db.update("INSERT INTO qy_ledger(id,user_id,entry_type,category,amount,note,entry_date) VALUES(?,?,?,?,?,?,?)", UUID.randomUUID().toString(), user, type, category, amount, Input.text(data, "note", 100, false), Timestamp.valueOf(date));
@@ -196,7 +196,7 @@ public class LifeService {
         String encoded = Input.text(data, "base64", 2800000, true);
         byte[] bytes;
         try { bytes = Base64.getDecoder().decode(encoded); }
-        catch (RuntimeException e) { throw new ApiError(400, "图片格式不正确"); }
+        catch (RuntimeException e) { throw new ApiError(400, "图片格式不正确", e); }
         if (bytes.length > 2 * 1024 * 1024) throw new ApiError(400, "图片需小于 2 MB");
         String mime;
         if (bytes.length >= 3 && bytes[0] == (byte) 0xff && bytes[1] == (byte) 0xd8 && bytes[2] == (byte) 0xff) mime = "image/jpeg";
@@ -216,7 +216,7 @@ public class LifeService {
                     if (reader.read(0) == null) throw new IllegalArgumentException();
                 } finally { reader.dispose(); }
             }
-        } catch (Exception e) { throw new ApiError(400, "图片无效或尺寸过大"); }
+        } catch (Exception e) { throw new ApiError(400, "图片无效或尺寸过大", e); }
         String id = UUID.randomUUID().toString();
         db.update("INSERT INTO qy_media(id,user_id,mime,content) VALUES(?,?,?,?)", id, user, mime, bytes);
         return publicUrl + "/api/media/" + id;

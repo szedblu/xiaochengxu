@@ -23,13 +23,13 @@ public final class Input {
             if (n.compareTo(BigDecimal.valueOf(min)) < 0 || n.compareTo(BigDecimal.valueOf(max)) > 0)
                 throw new NumberFormatException();
             return n.setScale(scale, RoundingMode.UNNECESSARY);
-        } catch (RuntimeException e) { throw new ApiError(400, "数值超出范围或小数位不正确"); }
+        } catch (RuntimeException e) { throw new ApiError(400, "数值超出范围或小数位不正确", e); }
     }
     public static LocalDate date(Object value) {
         try {
             LocalDate d = LocalDate.parse(String.valueOf(value));
             if (d.getYear() < 1900 || d.getYear() > 2200) throw new IllegalArgumentException();
             return d;
-        } catch (RuntimeException e) { throw new ApiError(400, "日期格式不正确"); }
+        } catch (RuntimeException e) { throw new ApiError(400, "日期格式不正确", e); }
     }
 }
