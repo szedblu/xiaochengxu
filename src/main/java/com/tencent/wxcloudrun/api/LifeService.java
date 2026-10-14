@@ -197,6 +197,9 @@ public class LifeService {
         byte[] bytes;
         try { bytes = Base64.getDecoder().decode(encoded); }
         catch (RuntimeException e) { throw new ApiError(400, "图片格式不正确", e); }
+        return saveImage(user, bytes);
+    }
+    String saveImage(String user, byte[] bytes) {
         if (bytes.length > 2 * 1024 * 1024) throw new ApiError(400, "图片需小于 2 MB");
         String mime;
         if (bytes.length >= 3 && bytes[0] == (byte) 0xff && bytes[1] == (byte) 0xd8 && bytes[2] == (byte) 0xff) mime = "image/jpeg";

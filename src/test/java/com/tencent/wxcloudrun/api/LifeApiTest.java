@@ -36,7 +36,7 @@ class LifeApiTest {
     @Autowired JdbcTemplate db;
     @MockBean WechatClient wechat;
     @BeforeEach void resetDatabase() {
-        for (String table : new String[] {"likes", "friends", "sessions", "checkins", "schedules", "weights", "ledger", "media", "posts", "users"}) db.update("DELETE FROM qy_" + table);
+        for (String table : new String[] {"upload_parts", "uploads", "likes", "friends", "sessions", "checkins", "schedules", "weights", "ledger", "media", "posts", "users"}) db.update("DELETE FROM qy_" + table);
         when(wechat.exchange(anyString())).thenAnswer(call -> "openid_" + call.getArgument(0));
     }
     private JsonNode request(MockHttpServletRequestBuilder builder, String token, Object body, int status) throws Exception {
@@ -53,6 +53,37 @@ class LifeApiTest {
     private String login(String code) throws Exception { return request(cloudLogin(code), null, null, 200).path("token").asText(); }
     private JsonNode state(String token) throws Exception { return request(get("/api/bootstrap"), token, null, 200); }
     private String id(String token) throws Exception { return state(token).path("meId").asText(); }
+
+    @Test void boundedChunksValidateOwnershipCompletenessAndCleanup() throws Exception {
+        String alice = login("upload-alice"), bob = login("upload-bob");
+        BufferedImage image = new BufferedImage(2, 2, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream imageBytes = new ByteArrayOutputStream();
+        ImageIO.write(image, "png", imageBytes);
+        byte[] bytes = java.util.Arrays.copyOf(imageBytes.toByteArray(), 50000);
+        request(post("/api/media/uploads"), null, Map.of("size", bytes.length, "parts", 2), 401);
+        request(post("/api/media/uploads"), alice, Map.of("size", 2097153, "parts", 43), 400);
+        request(post("/api/media/uploads"), alice, Map.of("size", 50000, "parts", 1), 400);
+        String upload = request(post("/api/media/uploads"), alice, Map.of("size", bytes.length, "parts", 2), 200).path("uploadId").asText();
+        String path = "/api/media/uploads/" + upload;
+        request(post(path + "/complete"), bob, null, 404);
+        request(put(path + "/parts/0"), bob, Map.of("base64", Base64.getEncoder().encodeToString(bytes)), 404);
+        request(delete(path), bob, null, 200);
+        request(post(path + "/complete"), alice, null, 400);
+        request(put(path + "/parts/2"), alice, Map.of("base64", "AA=="), 400);
+        request(put(path + "/parts/0"), alice, Map.of("base64", "AA=="), 400);
+        Map<String, Object> chunk = Map.of("base64", Base64.getEncoder().encodeToString(java.util.Arrays.copyOf(bytes, 49152)));
+        request(put(path + "/parts/0"), alice, chunk, 200);
+        request(put(path + "/parts/0"), alice, chunk, 200);
+        request(post(path + "/complete"), alice, null, 400);
+        request(put(path + "/parts/1"), alice, Map.of("base64", Base64.getEncoder().encodeToString(java.util.Arrays.copyOfRange(bytes, 49152, bytes.length))), 200);
+        String url = request(post(path + "/complete"), alice, null, 200).path("url").asText();
+        mvc.perform(get(url.replace("https://example.test", ""))).andExpect(status().isOk()).andExpect(content().bytes(bytes));
+        assertEquals(0, db.queryForObject("SELECT COUNT(*) FROM qy_upload_parts", Integer.class));
+        request(post(path + "/complete"), alice, null, 404);
+        String cancelled = request(post("/api/media/uploads"), alice, Map.of("size", bytes.length, "parts", 2), 200).path("uploadId").asText();
+        request(delete("/api/media/uploads/" + cancelled), alice, null, 200);
+        request(post("/api/media/uploads/" + cancelled + "/complete"), alice, null, 404);
+    }
 
     @Test void verifiedWechatIdentityAndRevocableSessions() throws Exception {
         request(get("/api/bootstrap").header("X-WX-OPENID", "forged"), null, null, 401);

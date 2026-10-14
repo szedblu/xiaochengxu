@@ -78,3 +78,20 @@ CREATE TABLE IF NOT EXISTS qy_media (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES qy_users(id)
 );
+
+CREATE TABLE IF NOT EXISTS qy_uploads (
+  id VARCHAR(36) PRIMARY KEY,
+  user_id VARCHAR(36) NOT NULL,
+  byte_size INT NOT NULL,
+  part_count INT NOT NULL,
+  expires_at TIMESTAMP NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES qy_users(id),
+  INDEX idx_upload_expiry (user_id, expires_at)
+);
+CREATE TABLE IF NOT EXISTS qy_upload_parts (
+  upload_id VARCHAR(36) NOT NULL,
+  part_index INT NOT NULL,
+  content BLOB NOT NULL,
+  PRIMARY KEY (upload_id, part_index),
+  FOREIGN KEY (upload_id) REFERENCES qy_uploads(id) ON DELETE CASCADE
+);
