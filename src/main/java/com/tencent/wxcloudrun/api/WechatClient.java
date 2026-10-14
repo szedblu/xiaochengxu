@@ -36,10 +36,17 @@ public class WechatClient {
                     String.class, appId, secret, code);
             response = json.readValue(body, Map.class);
         } catch (Exception e) {
-            // 异常 message 可能含带 secret 的请求 URL，不记录 message 或原始响应正文。
-            LOG.error("WeChat exchange failed: exception={}, upstreamStatus={}", e.getClass().getSimpleName(),
-                    e instanceof HttpStatusCodeException ? ((HttpStatusCodeException) e).getRawStatusCode() : "unknown", SafeLogs.exception(e));
-            throw new ApiError(502, "微信登录连接失败，请稍后重试", e);
+            Throwable cause = SafeLogs.rootCause(e);
+            // 原因放在首行：云控制台可能将多行堆栈显示为独立日志，首行必须可直接定位。
+            LOG.error("WeChat exchange failed: exception={}, upstreamStatus={}, rootCause={}, details={}", e.getClass().getSimpleName(),
+                    e instanceof HttpStatusCodeException ? ((HttpStatusCodeException) e).getRawStatusCode() : "unknown",
+                    cause.getClass().getSimpleName(), SafeLogs.summary(e), SafeLogs.exception(e));
+            String message = "微信登录连接失败，请稍后重试";
+            if (cause instanceof java.net.UnknownHostException) message = "服务端无法解析微信域名，请检查 DNS 配置";
+            else if (cause instanceof java.net.SocketTimeoutException) message = "服务端连接微信接口超时，请稍后重试";
+            else if (containsSslException(e)) message = "服务端微信 HTTPS 连接失败，请查看证书及 TLS 日志";
+            else if (cause instanceof java.net.ConnectException) message = "服务端无法连接微信接口，请检查出站网络";
+            throw new ApiError(502, message, e);
         }
         Object errorCode = response == null ? null : response.get("errcode");
         if (errorCode != null && !"0".equals(String.valueOf(errorCode))) {
@@ -61,5 +68,10 @@ public class WechatClient {
             throw new ApiError(401, "微信登录凭证已失效，请重新登录");
         LOG.info("WeChat exchange succeeded");
         return (String) response.get("openid");
+    }
+    private boolean containsSslException(Throwable exception) {
+        for (int i = 0; exception != null && i < 16; i++, exception = exception.getCause())
+            if (exception instanceof javax.net.ssl.SSLException) return true;
+        return false;
     }
 }

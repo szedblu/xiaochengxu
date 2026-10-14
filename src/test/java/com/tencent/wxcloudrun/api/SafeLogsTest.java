@@ -14,5 +14,9 @@ class SafeLogsTest {
         assertTrue(log.contains("SafeLogsTest")); assertTrue(log.contains("Caused by"));
         assertFalse(log.contains("private-secret")); assertFalse(log.contains("private-code"));
         assertFalse(log.contains("private-password")); assertFalse(log.contains("private-token"));
+        String summary = SafeLogs.summary(outer);
+        assertFalse(summary.contains("\n")); assertFalse(summary.contains("private-secret"));
+        assertFalse(summary.contains("private-code")); assertFalse(summary.contains("private-password"));
+        assertFalse(summary.contains("private-token")); assertSame(inner, SafeLogs.rootCause(outer));
     }
 }

@@ -3,6 +3,8 @@ package com.tencent.wxcloudrun.api;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 /** 保留异常类型、堆栈和因果链，清除可能出现在请求 URL 中的凭据。 */
 public final class SafeLogs {
@@ -15,6 +17,21 @@ public final class SafeLogs {
     }
     public static Throwable exception(Throwable original) {
         return copy(original, Collections.newSetFromMap(new IdentityHashMap<>()), 0);
+    }
+    public static Throwable rootCause(Throwable original) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        Throwable root = original;
+        while (root.getCause() != null && seen.add(root) && !seen.contains(root.getCause())) root = root.getCause();
+        return root;
+    }
+    public static String summary(Throwable original) {
+        Set<Throwable> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+        List<String> parts = new ArrayList<>();
+        for (Throwable item = original; item != null && parts.size() < 12 && seen.add(item); item = item.getCause()) {
+            parts.add(item.getClass().getSimpleName() + ": " + redact(item.getMessage()).replaceAll("[\\r\\n\\t]+", " "));
+        }
+        String result = String.join(" <- ", parts);
+        return result.length() <= 2000 ? result : result.substring(0, 2000) + " [truncated]";
     }
     private static Throwable copy(Throwable original, Set<Throwable> seen, int depth) {
         if (original == null || depth > 12 || !seen.add(original)) return null;

@@ -35,8 +35,8 @@ public class ApiAdvice {
         Throwable cause = e;
         for (int i = 0; i < 16 && cause.getCause() != null; i++) cause = cause.getCause();
         String location = e.getStackTrace().length == 0 ? "unknown" : e.getStackTrace()[0].toString();
-        LOG.error("API operation failed: path={}, exception={}, cause={}, location={}", request.getRequestURI(),
-                e.getClass().getSimpleName(), cause.getClass().getSimpleName(), location, SafeLogs.exception(e));
+        LOG.error("API operation failed: path={}, exception={}, cause={}, location={}, details={}", request.getRequestURI(),
+                e.getClass().getSimpleName(), cause.getClass().getSimpleName(), location, SafeLogs.summary(e), SafeLogs.exception(e));
         if (cause instanceof SQLException) {
             SQLException sql = (SQLException) cause;
             LOG.error("Database operation failed: sqlState={}, vendorCode={}", sql.getSQLState(), sql.getErrorCode());

@@ -54,4 +54,28 @@ class WechatClientTest {
         ApiError error = assertThrows(ApiError.class, () -> client.exchange("code"));
         assertEquals(502, error.status); assertFalse(error.getMessage().contains("private-value")); server.verify();
     }
+    @Test void reportsDnsCauseOnFirstLogLineWithoutCredentials() {
+        WechatClient client = client("private-value");
+        ch.qos.logback.classic.Logger logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(WechatClient.class);
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> events = new ch.qos.logback.core.read.ListAppender<>();
+        events.start(); logger.addAppender(events);
+        try {
+            server.expect(requestTo(startsWith("https://api.weixin.qq.com/")))
+                    .andRespond(request -> { throw new java.net.UnknownHostException("api.weixin.qq.com"); });
+            ApiError error = assertThrows(ApiError.class, () -> client.exchange("private-code"));
+            assertTrue(error.getMessage().contains("DNS"));
+            String line = events.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .filter(message -> message.startsWith("WeChat exchange failed")).findFirst().orElseThrow();
+            assertTrue(line.contains("rootCause=UnknownHostException")); assertTrue(line.contains("api.weixin.qq.com"));
+            assertFalse(line.contains("private-value")); assertFalse(line.contains("private-code")); assertFalse(line.contains("\n"));
+            server.verify();
+        } finally { logger.detachAppender(events); events.stop(); }
+    }
+    @Test void distinguishesTlsFailureFromInvalidLoginCode() {
+        WechatClient client = client("private-value");
+        server.expect(requestTo(startsWith("https://api.weixin.qq.com/")))
+                .andRespond(request -> { throw new javax.net.ssl.SSLHandshakeException("PKIX path building failed"); });
+        ApiError error = assertThrows(ApiError.class, () -> client.exchange("private-code"));
+        assertEquals(502, error.status); assertTrue(error.getMessage().contains("TLS")); server.verify();
+    }
 }
