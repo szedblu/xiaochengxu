@@ -16,34 +16,26 @@ import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.beans.factory.annotation.Value;
 
 @Service
 public class AuthService {
     private static final Logger LOG = LoggerFactory.getLogger(AuthService.class);
     private final JdbcTemplate db;
-    private final WechatClient wechat;
     private final SecureRandom random = new SecureRandom();
-    @Value("${app.wechat-code-login-enabled:false}") private boolean codeLoginEnabled;
-    public AuthService(JdbcTemplate db, WechatClient wechat) { this.db = db; this.wechat = wechat; }
-    public Map<String, Object> login(String code) {
-        if (!codeLoginEnabled) throw new ApiError(410, "请更新小程序，使用云托管身份登录");
-        String openid = wechat.exchange(code);
-        return loginIdentity(openid);
-    }
+    public AuthService(JdbcTemplate db) { this.db = db; }
     public Map<String, Object> loginIdentity(String openid) {
         LOG.info("Login identity verified; querying user");
-        List<String> found = db.queryForList("SELECT id FROM qy_users WHERE openid=?", String.class, openid);
+        List<String> found = db.queryForList("SELECT id FROM cf_users WHERE openid=?", String.class, openid);
         String userId;
         if (found.isEmpty()) {
             userId = UUID.randomUUID().toString();
-            String account = "qy_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
+            String account = "cf_" + UUID.randomUUID().toString().replace("-", "").substring(0, 16);
             try {
-                db.update("INSERT INTO qy_users(id,openid,name,account) VALUES(?,?,?,?)", userId, openid, "拾痕用户", account);
+                db.update("INSERT INTO cf_users(id,openid,name,account) VALUES(?,?,?,?)", userId, openid, "一起吃饭用户", account);
                 LOG.info("Login user created");
             } catch (DuplicateKeyException e) {
                 LOG.warn("Login concurrent user creation detected", SafeLogs.exception(e));
-                userId = db.queryForObject("SELECT id FROM qy_users WHERE openid=?", String.class, openid);
+                userId = db.queryForObject("SELECT id FROM cf_users WHERE openid=?", String.class, openid);
             }
         } else userId = found.get(0);
         byte[] bytes = new byte[32];
@@ -51,21 +43,21 @@ public class AuthService {
         String token = Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
         Instant expiry = Instant.now().plus(30, ChronoUnit.DAYS);
         LOG.info("Login session creation started");
-        db.update("DELETE FROM qy_sessions WHERE user_id=? AND expires_at<CURRENT_TIMESTAMP", userId);
-        db.update("INSERT INTO qy_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)", hash(token), userId, Timestamp.from(expiry));
+        db.update("DELETE FROM cf_sessions WHERE user_id=? AND expires_at<CURRENT_TIMESTAMP", userId);
+        db.update("INSERT INTO cf_sessions(token_hash,user_id,expires_at) VALUES(?,?,?)", hash(token), userId, Timestamp.from(expiry));
         LOG.info("Login session creation succeeded");
         return Map.of("token", token, "expiresAt", expiry.toString(), "userId", userId);
     }
     public String require(String header) {
         if (header == null || !header.matches("Bearer [A-Za-z0-9_-]{43}")) throw new ApiError(401, "请先登录");
-        List<String> found = db.queryForList("SELECT user_id FROM qy_sessions WHERE token_hash=? AND expires_at>CURRENT_TIMESTAMP",
+        List<String> found = db.queryForList("SELECT user_id FROM cf_sessions WHERE token_hash=? AND expires_at>CURRENT_TIMESTAMP",
                 String.class, hash(header.substring(7)));
         if (found.isEmpty()) throw new ApiError(401, "登录已过期，请重新登录");
         return found.get(0);
     }
     public void logout(String header) {
         require(header);
-        db.update("DELETE FROM qy_sessions WHERE token_hash=?", hash(header.substring(7)));
+        db.update("DELETE FROM cf_sessions WHERE token_hash=?", hash(header.substring(7)));
     }
     private String hash(String token) {
         try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8))); }
