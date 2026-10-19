@@ -149,11 +149,16 @@ public class FoodService {
     public void quantity(String actor,Map<String,Object> data) {
         String owner=owner(actor,Input.text(data,"ownerId",36,false),true),meal=meal(data),dish=Input.text(data,"dishId",36,true);LocalDate date=date(data);
         int delta=Input.decimal(data.get("delta"),-1,1,0).intValueExact();if(delta==0)throw new ApiError(400,"数量变化无效");
+        if(data.containsKey("selectOnly") && !(data.get("selectOnly") instanceof Boolean))throw new ApiError(400,"选菜参数无效");
+        boolean selectOnly=Boolean.TRUE.equals(data.get("selectOnly"));
+        if(selectOnly && delta!=1)throw new ApiError(400,"选菜只能增加新菜品");
         if(!command(actor,data,"quantity"))return;
         mealRow(owner,date,meal);
         if(db.queryForObject("SELECT COUNT(*) FROM cf_recipes WHERE id=? AND active=TRUE AND (owner_id IS NULL OR owner_id=? OR owner_id=? OR id IN (SELECT recipe_id FROM cf_lines WHERE owner_id=?))",Integer.class,dish,actor,owner,owner)==0)
             throw new ApiError(404,"菜品已删除或无权限");
         List<Integer> old=db.queryForList("SELECT qty FROM cf_lines WHERE owner_id=? AND meal_date=? AND meal_key=? AND recipe_id=?",Integer.class,owner,date,meal,dish);
+        // Selecting a recipe adds it once. Only the order editor changes existing quantities.
+        if(selectOnly && !old.isEmpty())return;
         int qty=(old.isEmpty()?0:old.get(0))+delta;
         if(qty<0||qty>20)throw new ApiError(400,"单品数量需为0至20份");
         if(qty==0)db.update("DELETE FROM cf_lines WHERE owner_id=? AND meal_date=? AND meal_key=? AND recipe_id=?",owner,date,meal,dish);
@@ -172,7 +177,7 @@ public class FoodService {
             String img=r.getString("image_id");
             return Map.of("id",r.getString("recipe_id"),"name",r.getString("name"),"qty",r.getInt("qty"),"kcal",r.getInt("kcal"),"unit",r.getString("unit"),"img",img==null?r.getString("image_url"):publicUrl+"/api/food/images/"+img);
         },owner,date,meal);
-        if(lines.isEmpty())throw new ApiError(400,"本餐还没有选菜");
+        if(lines.isEmpty() && ((Number)row.get("submitted_revision")).longValue()<0)throw new ApiError(400,"本餐还没有选菜");
         int total=lines.stream().mapToInt(l->((Number)l.get("qty")).intValue()*((Number)l.get("kcal")).intValue()).sum();
         db.update("INSERT INTO cf_orders(id,owner_id,meal_date,meal_key,revision,submitted_by,submitted_name,snapshot,total_kcal) VALUES(?,?,?,?,?,?,?,?,?)",UUID.randomUUID().toString(),owner,date,meal,revision,actor,person(actor).get("name"),encode(lines),total);
         db.update("UPDATE cf_meals SET submitted_revision=revision,submitted_at=CURRENT_TIMESTAMP WHERE owner_id=? AND meal_date=? AND meal_key=?",owner,date,meal);

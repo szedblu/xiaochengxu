@@ -145,6 +145,38 @@ class FoodApiTest {
         mvc.perform(get("/api/food/images/seed-rice")).andExpect(status().isOk()).andExpect(content().contentType("image/jpeg")).andExpect(content().bytes(bytes));
         request(get("/api/food/images/missing"),null,null,404);
     }
+    @Test void selectingSameDishConcurrentlyDoesNotIncreaseQuantity()throws Exception {
+        String a=login("select-a"),b=login("select-b"),owner=id(a),bob=id(b);
+        request(put("/api/food/friends/"+bob),a,null,200);
+        ExecutorService pool=Executors.newFixedThreadPool(2);
+        try {
+            CountDownLatch gate=new CountDownLatch(1);
+            Future<?> first=pool.submit(()->{try{gate.await();Map<String,Object> q=qty(owner,1);q.put("selectOnly",true);food.quantity(owner,q);}catch(Exception e){throw new RuntimeException(e);}});
+            Future<?> second=pool.submit(()->{try{gate.await();Map<String,Object> q=qty(owner,1);q.put("selectOnly",true);food.quantity(bob,q);}catch(Exception e){throw new RuntimeException(e);}});
+            gate.countDown();first.get(15,TimeUnit.SECONDS);second.get(15,TimeUnit.SECONDS);
+        } finally{pool.shutdownNow();}
+        assertEquals(1,db.queryForObject("SELECT qty FROM cf_lines",Integer.class));
+        assertEquals(1,db.queryForObject("SELECT revision FROM cf_meals",Integer.class));
+        Map<String,Object> selected=qty(owner,1);selected.put("selectOnly",true);
+        request(post("/api/food/lines"),a,selected,200);
+        assertEquals(1,db.queryForObject("SELECT qty FROM cf_lines",Integer.class));
+        request(post("/api/food/lines"),a,qty(owner,1),200);
+        assertEquals(2,db.queryForObject("SELECT qty FROM cf_lines",Integer.class));
+    }
+    @Test void clearingSubmittedMealCanBeConfirmedWithoutDeletingOriginalSnapshot()throws Exception {
+        String a=login("cancel-a"),owner=id(a);
+        request(post("/api/food/orders"),a,Map.of("date",Input.today().toString(),"meal","l","revision",0,"commandId",UUID.randomUUID().toString()),400);
+        request(post("/api/food/lines"),a,qty(owner,1),200);
+        request(post("/api/food/orders"),a,Map.of("date",Input.today().toString(),"meal","l","revision",1,"commandId",UUID.randomUUID().toString()),200);
+        request(post("/api/food/lines"),a,qty(owner,-1),200);
+        request(post("/api/food/orders"),a,Map.of("date",Input.today().toString(),"meal","l","revision",1,"commandId",UUID.randomUUID().toString()),409);
+        Map<String,Object> cancel=Map.of("date",Input.today().toString(),"meal","l","revision",2,"commandId",UUID.randomUUID().toString());
+        request(post("/api/food/orders"),a,cancel,200);request(post("/api/food/orders"),a,cancel,200);
+        assertEquals(2,db.queryForObject("SELECT COUNT(*) FROM cf_orders",Integer.class));
+        assertEquals(1,db.queryForObject("SELECT COUNT(*) FROM cf_orders WHERE total_kcal=116",Integer.class));
+        assertEquals("[]",db.queryForObject("SELECT snapshot FROM cf_orders WHERE total_kcal=0",String.class));
+        assertEquals(2,db.queryForObject("SELECT submitted_revision FROM cf_meals",Integer.class));
+    }
     @Test void recipeOwnershipAndFeedbackVisibility()throws Exception {
         String a=login("a"),b=login("b"),owner=id(a);
         Map<String,Object> recipe=Map.of("name","青椒肉丝","cat","菜品","kcal",180,"unit","份","img","");
